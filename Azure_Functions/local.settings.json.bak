@@ -1,0 +1,13 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "UseDevelopmentStorage=true",
+    "FUNCTIONS_WORKER_RUNTIME": "python",
+    "DB_HOST": "localhost",
+    "DB_PORT": "5432",
+    "DB_USER": "myuser",
+    "DB_PASSWORD": "mypassword",
+    "DB_NAME": "mydb",
+    "TEST_DATETIME": "2024-10-01 00:00:00",
+  }
+}

@@ -2,8 +2,9 @@ import azure.functions as func
 import logging
 import os
 import json
+from datetime import datetime
 
-import psycopg2
+import psycopg
 
 from contextlib import contextmanager
 from typing import Generator
@@ -12,9 +13,33 @@ from sqlalchemy import create_engine
 from sqlalchemy import Engine
 from sqlalchemy import event
 from sqlalchemy.orm import Session
+from sqlalchemy.dialects.postgresql import insert
+
 from models import Products, Customers, Orders
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
+
+logging.getLogger().setLevel(logging.DEBUG)  # 全体のログレベルをDEBUGに設定
+
+def get_current_datetime() -> datetime:
+    """
+    現在の日時を取得する
+
+    Returns:
+        datetime: 現在の日時
+    """
+    for_test = os.getenv("TEST_DATETIME")
+
+    if for_test:
+        # テスト用の環境変数が設定されている場合は、その値を使用
+        try:
+            return datetime.strptime(for_test, "%Y-%m-%d %H:%M:%S")
+        except ValueError as e:
+            # raise ValueError("環境変数 TEST_DATETIME の値が日付フォーマットと一致しません。") from e
+            logging.debug("環境変数 TEST_DATETIME の値が日付フォーマットと一致しません。 (%s)", str(e))
+
+    # 環境変数が設定されていない場合は、現在の日時を取得
+    return datetime.now()
 
 def get_db_connection_info() -> dict:
     """
@@ -64,7 +89,7 @@ def HttpExample(req: func.HttpRequest) -> func.HttpResponse:
              status_code=200
         )
 
-@app.route(route="http_trigger2", auth_level=func.AuthLevel.FUNCTION)
+@app.route(route="http_trigger2", auth_level=func.AuthLevel.ANONYMOUS)
 def test2(req: func.HttpRequest) -> func.HttpResponse:
     """
     test2 _summary_
@@ -109,7 +134,7 @@ def db_access_whithout_sqlalchemy(req: func.HttpRequest) -> func.HttpResponse:
         db_info = get_db_connection_info()
 
         # PostgreSQLに接続
-        conn = psycopg2.connect(
+        conn = psycopg.connect(
             host=db_info["host"],
             port=db_info["port"],
             user=db_info["user"],
@@ -147,6 +172,7 @@ def db_access_whithout_sqlalchemy(req: func.HttpRequest) -> func.HttpResponse:
         )
 
 
+##########################################
 # ここからSQLAlchemyを使用したDBアクセスのサンプル
 
 def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
@@ -169,7 +195,6 @@ def create_sqlalchemy_engine() -> Engine:
     engine = create_engine(db_url, echo=False)  # echo=Falseに設定
 
     # logging.getLogger("sqlalchemy.engine").setLevel(logging.DEBUG)  # SQLAlchemyのログレベルをDEBUGに設定
-    logging.getLogger().setLevel(logging.DEBUG)  # 全体のログレベルをDEBUGに設定
 
     event.listen(engine, "before_cursor_execute", before_cursor_execute)
 
@@ -218,6 +243,72 @@ def db_access_sample2(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(
             body=json.dumps(products_list),
             mimetype="application/json",
+            status_code=200
+        )
+
+    except Exception as e:
+        logging.error(f"Error occurred: {str(e)}")
+        return func.HttpResponse(
+            body=f"Error: {str(e)}",
+            status_code=500
+        )
+
+@app.route(route="db_upsert_sample", auth_level=func.AuthLevel.ANONYMOUS)
+def db_upsert_sample(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info('Python HTTP trigger function processed a request.')
+
+    product_id = req.params.get('product_id')
+
+    order_data = {
+        "order_id": 6,  # 主キーを指定
+        "customer_id": 4,
+        "product_id": product_id,
+        "quantity": 3,
+        "order_date": get_current_datetime()
+    }
+
+    try:
+        # セッションを作成
+        with session_scope() as session:
+            stmt = insert(Orders).values(**order_data)
+            stmt = stmt.on_conflict_do_update(
+                constraint="orders_pkey",
+                #set_=order_data
+                set_={
+                    "customer_id": stmt.excluded.customer_id,
+                    "product_id": stmt.excluded.product_id,
+                    "quantity": stmt.excluded.quantity,
+                    "order_date": stmt.excluded.order_date
+                }
+            )
+            session.execute(stmt)
+            session.commit()
+
+        return func.HttpResponse(
+            status_code=200
+        )
+
+    except Exception as e:
+        logging.error(f"Error occurred: {str(e)}")
+        return func.HttpResponse(
+            body=f"Error: {str(e)}",
+            status_code=500
+        )
+
+@app.route(route="db_delete_sample", auth_level=func.AuthLevel.ANONYMOUS)
+def db_delete_sample(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info('Python HTTP trigger function processed a request.')
+
+    product_id = req.params.get('product_id')
+
+    try:
+        # セッションを作成
+        with session_scope() as session:
+            order = session.query(Orders).filter(Orders.product_id == product_id).first()
+            session.delete(order)
+            session.commit()
+
+        return func.HttpResponse(
             status_code=200
         )
 

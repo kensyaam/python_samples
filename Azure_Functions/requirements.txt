@@ -3,5 +3,6 @@
 # Manually managing azure-functions-worker may cause unexpected issues
 
 azure-functions
-psycopg2
-sqlalchemy
+psycopg[binary]==3.2.6
+SQLAlchemy==2.0.40
+pydantic==2.11.3
