@@ -1,0 +1,25 @@
+-r requirements.txt
+invoke
+# For testing
+pytest
+pytest-env
+pytest-cov
+pytest-mock
+pytest-html
+factory_boy
+# For linting
+flake8
+pylint
+# For code formatting
+black
+isort
+# For type checking
+mypy
+# For documentation
+sphinx
+sphinx-autodoc-typehints
+sphinx-rtd-theme
+# For performance testing
+# pytest-benchmark
+# For security testing
+# bandit

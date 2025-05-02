@@ -1,0 +1,15 @@
+[run]
+omit =
+    */__init__.py
+    tests/*
+    db/models.py
+
+[report]
+show_missing = True
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError
+
+[html]
+directory = htmlcov
