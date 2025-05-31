@@ -1,16 +1,18 @@
 import logging
-import sys
 import os
+import sys
 import traceback
-import pytest
-from sqlalchemy import create_engine
-from sqlalchemy import Engine
-from sqlalchemy import event
-from sqlalchemy.orm import sessionmaker, scoped_session
+from typing import Generator
 
-from db.models import Base, Customers, Products, Orders
+import pytest
+from sqlalchemy import Engine, create_engine, event
+from sqlalchemy.orm import scoped_session, sessionmaker
+
+from db.models import Base, Customers, Orders, Products
+from tests.func_runner import FuncRunner
 
 logger = logging.getLogger("tests")
+
 
 def stack_trace(stack_list):
     """
@@ -26,12 +28,14 @@ def stack_trace(stack_list):
     formatted_stack = traceback.format_list(stack_list)
     # formatted_stack から .venv配下のパス、<frozen runpy>を除外
     formatted_stack = [
-        line for line in formatted_stack
+        line
+        for line in formatted_stack
         if not ("<frozen runpy>" in line or ".venv" in line)
     ]
     # formatted_stack = [line for line in formatted_stack if "<frozen runpy>" not in line]
     # formatted_stack = [line for line in formatted_stack if ".venv" not in line]
     return "".join(formatted_stack)
+
 
 def before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
     """
@@ -40,6 +44,7 @@ def before_cursor_execute(conn, cursor, statement, parameters, context, executem
     # logger.debug("SQL: %s\n  Parameters: %s", statement, parameters)
     # logger.info("SQL: %s\n  Parameters: %s", statement, parameters)
 
+
 def receive_commit(conn):
     """
     SQLAlchemyのcommitイベントのハンドラー
@@ -47,6 +52,7 @@ def receive_commit(conn):
     logger.info("Transaction committed.")
     # logger.info("Transaction committed. \n%s",
     #             stack_trace(traceback.extract_stack()))
+
 
 def receive_rollback(conn):
     """
@@ -63,7 +69,7 @@ db_info = {
     "port": os.environ["DB_PORT"],
     "user": os.environ["DB_USER"],
     "password": os.environ["DB_PASSWORD"],
-    "dbname": os.environ["DB_NAME"]
+    "dbname": os.environ["DB_NAME"],
 }
 
 
@@ -75,14 +81,14 @@ event.listen(engine, "rollback", receive_rollback)
 
 
 # scoped_session
-ScopedSession = scoped_session(sessionmaker(
-        autocommit=False,
-        autoflush=True,
-        bind=engine))
+ScopedSession = scoped_session(
+    sessionmaker(autocommit=False, autoflush=True, bind=engine)
+)
 
 Base.metadata.drop_all(bind=engine)
 
-@pytest.fixture(scope='function')
+
+@pytest.fixture(scope="function")
 def db_session():
     # logging.info("FIXTURE db_session Before")
 
@@ -101,3 +107,24 @@ def db_session():
 
     # テーブル削除
     Base.metadata.drop_all(bind=engine)
+
+
+@pytest.fixture(scope="session")
+def function_runner() -> Generator[FuncRunner, None, None] :
+    print("Start fixture function_runner ...")
+    runner = FuncRunner()
+    runner.start()
+
+    yield runner
+
+    print("End fixture function_runner ...")
+    runner.stop()
+
+
+@pytest.fixture(scope="function")
+def runner(function_runner) -> FuncRunner:
+    print("Start fixture : runner ...")
+    runner = function_runner
+    runner.get_and_clear_log_lines()  # Clear logs before each test
+
+    return runner
