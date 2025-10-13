@@ -29,12 +29,12 @@ pip install -r requirements.txt
 ## 実行方法
 ### バッチファイル
 ```bat
-run_convert.bat "C:\path\to\input" "C:\path\to\output" --recursive
+run_export.bat "C:\path\to\input" "C:\path\to\output" --recursive
 ```
 
 ### シェルスクリプト (Git for windows)
 ```
-./run_convert.sh "/path/to/input" "/path/to/output" --recursive
+./run_export.sh "/path/to/input" "/path/to/output" --recursive
 ```
 
 - 出力先は第二引数で指定可能（未指定なら入力フォルダ内）。
