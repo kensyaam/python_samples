@@ -5,7 +5,7 @@ Excel ブック内のセルとシェイプのフォントを一括変更する�
 - xlwings を使用してExcelの書式を参照・編集
 - UI操作をブロックしない
 - フォルダまたはファイルパスを引数で指定
-- メイリオ以外のフォントをメイリオに変更し、サイズを0.84倍に調整
+- メイリオ以外のフォントをメイリオに変更し、サイズを0.9倍に調整
 - 非表示シート・セル・シェイプは対象外
 - 値が入っているセルのみを処理
 """
@@ -13,16 +13,20 @@ Excel ブック内のセルとシェイプのフォントを一括変更する�
 import argparse
 import math
 import time
+import traceback
 from pathlib import Path
+from typing import Any, Set, cast
 
 import xlwings as xw  # type: ignore
+from xlwings import Range, Shape, Sheet
 
 
 class ExcelFontChanger:
     """Excelファイルのフォントを変更するクラス"""
 
     TARGET_FONT = "メイリオ"
-    FONT_SIZE_RATIO = 0.84
+    FONT_SIZE_RATIO = 0.85
+    LINE_SPACE_WITHIN = 0.8
 
     def __init__(self, exclude_sheets=None):
         """
@@ -55,7 +59,7 @@ class ExcelFontChanger:
                 print(f"\n[{i}/{len(excel_files)}] {file_path.name}")
                 self.process_file(str(file_path))
 
-    def process_file(self, file_path):
+    def process_file(self, file_path: Path):
         """単一のExcelファイルを処理"""
         print(f"処理開始: {file_path}")
 
@@ -74,6 +78,7 @@ class ExcelFontChanger:
                 print(f"  対象シート数: {len(target_sheets)}/{len(wb.sheets)}")
 
                 for i, sheet in enumerate(target_sheets, 1):
+                    sheet = cast(Sheet, sheet)
                     print(f"  [{i}/{len(target_sheets)}] シート: {sheet.name}")
                     self.process_sheet(sheet)
 
@@ -86,11 +91,9 @@ class ExcelFontChanger:
 
         except Exception as e:
             print(f"  ✗ エラー: {e}")
-            import traceback
-
             traceback.print_exc()
 
-    def process_sheet(self, sheet):
+    def process_sheet(self, sheet: Sheet):
         """シート内のセルとシェイプを処理"""
         # セルの処理
         cell_count = self.process_cells(sheet)
@@ -100,10 +103,10 @@ class ExcelFontChanger:
         shape_count = self.process_shapes(sheet)
         print(f"    - シェイプ処理完了: {shape_count}個")
 
-    def process_cells(self, sheet):
+    def process_cells(self, sheet: Sheet):
         """セルのフォントを処理"""
         changed_count = 0
-        processed_addresses = set()  # 重複処理を避けるためのセット
+        processed_addresses: Set[Any] = set()  # 重複処理を避けるためのセット
 
         try:
             # 1. SpecialCells で値が入っているセルを取得
@@ -187,7 +190,7 @@ class ExcelFontChanger:
 
         return changed_count
 
-    def _process_range(self, sheet, range_obj, processed_addresses):
+    def _process_range(self, sheet: Sheet, range_obj, processed_addresses: Set):
         """Range オブジェクト内のセルを処理"""
         changed_count = 0
 
@@ -219,13 +222,14 @@ class ExcelFontChanger:
 
         return changed_count
 
-    def _process_single_cell(self, cell):
+    def _process_single_cell(self, cell: Range):
         """単一セルのフォントを処理"""
         try:
             font = cell.font
             if font.name != self.TARGET_FONT:
                 print(f"        - フォント: {cell.address} - {font.name}, {font.size}")
                 old_size = font.size
+                old_bold = font.bold
 
                 # font.size が None の場合（リッチテキストなど）は
                 # デフォルトサイズ（11pt）を使用
@@ -233,15 +237,18 @@ class ExcelFontChanger:
                     try:
                         # Characters(1, 1) で最初の1文字を取得
                         old_size = cell.api.Characters(1, 1).Font.Size
+                        old_bold = cell.api.Characters(1, 1).Font.Bold
                     except Exception:
                         # それでも取得できない場合はデフォルト（11pt）を使用
                         old_size = 11
                     print(f"                  : old_size: None → {old_size}")
 
-                new_size = math.floor(old_size * self.FONT_SIZE_RATIO)
+                # new_size = math.floor(old_size * self.FONT_SIZE_RATIO)
+                new_size = math.floor(old_size * self.FONT_SIZE_RATIO * 2) / 2  # 0.5刻みで小さい方に丸める
 
                 font.name = self.TARGET_FONT
                 font.size = new_size
+                font.bold = old_bold
                 return True
         except Exception as e:
             print(f"        警告: セルフォント処理中にエラー: {e}")
@@ -249,7 +256,7 @@ class ExcelFontChanger:
 
         return False
 
-    def process_shapes(self, sheet):
+    def process_shapes(self, sheet: Sheet):
         """シェイプのフォントを処理"""
         changed_count = 0
 
@@ -280,21 +287,21 @@ class ExcelFontChanger:
 
         return changed_count
 
-    def has_textframe2(self, shape):
+    def has_textframe2(self, shape: Shape):
         """シェイプが TextFrame2 を持つか確認"""
         try:
             return shape.api.TextFrame2.HasText
         except Exception:
             return False
 
-    def has_textframe(self, shape):
+    def has_textframe(self, shape: Shape):
         """シェイプが TextFrame を持つか確認"""
         try:
             return hasattr(shape.api, "TextFrame") and shape.api.TextFrame.Characters().Text != ""
         except Exception:
             return False
 
-    def process_shape_textframe2(self, shape):
+    def process_shape_textframe2(self, shape: Shape):
         """TextFrame2 を使用してシェイプのフォントを処理"""
         try:
             text_frame = shape.api.TextFrame2.TextRange
@@ -302,10 +309,14 @@ class ExcelFontChanger:
 
             if font.Name != self.TARGET_FONT:
                 old_size = font.Size
-                new_size = math.floor(old_size * self.FONT_SIZE_RATIO)
+                # new_size = math.floor(old_size * self.FONT_SIZE_RATIO)
+                new_size = math.floor(old_size * self.FONT_SIZE_RATIO * 2) / 2  # 0.5刻みで小さい方に丸める
 
                 font.Name = self.TARGET_FONT
+                font.NameFarEast = self.TARGET_FONT
                 font.Size = new_size
+
+                self._adjust_shape_line_spacing(shape)
                 return True
 
         except Exception:
@@ -313,7 +324,7 @@ class ExcelFontChanger:
 
         return False
 
-    def process_shape_textframe(self, shape):
+    def process_shape_textframe(self, shape: Shape):
         """TextFrame を使用してシェイプのフォントを処理"""
         try:
             characters = shape.api.TextFrame.Characters()
@@ -321,16 +332,34 @@ class ExcelFontChanger:
 
             if font.Name != self.TARGET_FONT:
                 old_size = font.Size
-                new_size = math.floor(old_size * self.FONT_SIZE_RATIO)
+                # new_size = math.floor(old_size * self.FONT_SIZE_RATIO)
+                new_size = math.floor(old_size * self.FONT_SIZE_RATIO * 2) / 2  # 0.5刻みで小さい方に丸める
 
                 font.Name = self.TARGET_FONT
+                font.NameFarEast = self.TARGET_FONT
                 font.Size = new_size
+
+                # self._adjust_shape_line_spacing(shape)
                 return True
 
         except Exception:
             pass
 
         return False
+
+    def _adjust_shape_line_spacing(self, shape):
+        """シェイプの行間を倍数 0.8 に設定（TextFrame2）"""
+        try:
+            # see.
+            # https://learn.microsoft.com/ja-jp/office/vba/api/office.textrange2.paragraphformat
+            # https://learn.microsoft.com/ja-jp/office/vba/api/overview/library-reference/paragraphformat2-members-office
+            para_format = shape.api.TextFrame2.TextRange.ParagraphFormat
+            # 行間を行数で指定
+            para_format.LineRuleWithin = 1  # msoTrue
+            para_format.SpaceWithin = self.LINE_SPACE_WITHIN
+        except Exception as e:
+            print(f"  ✗ エラー: {e}")
+            traceback.print_exc()
 
 
 def main():
