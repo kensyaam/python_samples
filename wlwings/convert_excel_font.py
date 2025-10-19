@@ -25,7 +25,8 @@ class ExcelFontChanger:
     """Excelファイルのフォントを変更するクラス"""
 
     TARGET_FONT = "メイリオ"
-    FONT_SIZE_RATIO = 0.85
+    FONT_SIZE_RATIO_FOR_GE_11 = 0.9
+    FONT_SIZE_RATIO_FOR_LT_11 = 0.85
     LINE_SPACE_WITHIN = 0.8
 
     def __init__(self, exclude_sheets=None):
@@ -227,7 +228,8 @@ class ExcelFontChanger:
         try:
             font = cell.font
             if font.name != self.TARGET_FONT:
-                print(f"        - フォント: {cell.address} - {font.name}, {font.size}")
+                # print(f"        - フォント: {cell.address} - {font.name}, {font.size}")
+                old_name = font.name
                 old_size = font.size
                 old_bold = font.bold
 
@@ -244,12 +246,24 @@ class ExcelFontChanger:
                     print(f"                  : old_size: None → {old_size}")
 
                 # new_size = math.floor(old_size * self.FONT_SIZE_RATIO)
-                new_size = math.floor(old_size * self.FONT_SIZE_RATIO * 2) / 2  # 0.5刻みで小さい方に丸める
+                if old_size >= 11:
+                    new_size = (
+                        math.floor(old_size * self.FONT_SIZE_RATIO_FOR_GE_11 * 2) / 2
+                    )  # 0.5刻みで小さい方に丸める
+                else:
+                    new_size = (
+                        math.floor(old_size * self.FONT_SIZE_RATIO_FOR_LT_11 * 2) / 2
+                    )  # 0.5刻みで小さい方に丸める
 
                 font.name = self.TARGET_FONT
                 font.size = new_size
                 font.bold = old_bold
+                print(
+                    f"        - フォント: {cell.address} - [{old_name}, {old_size}]"
+                    f" -> {font.name}, {font.size} : {repr(cell.value)}"
+                )
                 return True
+
         except Exception as e:
             print(f"        警告: セルフォント処理中にエラー: {e}")
             pass
@@ -269,14 +283,18 @@ class ExcelFontChanger:
                     if not shape.api.Visible:
                         continue
 
-                    # TextFrame2 を優先的に使用
-                    if self.has_textframe2(shape):
-                        if self.process_shape_textframe2(shape):
-                            changed_count += 1
-                    # TextFrame2 がない場合は TextFrame を使用
-                    elif self.has_textframe(shape):
-                        if self.process_shape_textframe(shape):
-                            changed_count += 1
+                    # グループシェイプの場合は再帰的に処理
+                    if self._is_group_shape(shape):
+                        changed_count += self._process_grouped_shapes(shape)
+                    else:
+                        # TextFrame2 を優先的に使用
+                        if self.has_textframe2(shape):
+                            if self.process_shape_textframe2(shape):
+                                changed_count += 1
+                        # TextFrame2 がない場合は TextFrame を使用
+                        elif self.has_textframe(shape):
+                            if self.process_shape_textframe(shape):
+                                changed_count += 1
 
                 except Exception:
                     # 個別シェイプのエラーは無視して続行
@@ -288,35 +306,106 @@ class ExcelFontChanger:
         return changed_count
 
     def has_textframe2(self, shape: Shape):
+        return self.has_textframe2_com(shape.api)
+
+    def has_textframe2_com(self, com_shape):
         """シェイプが TextFrame2 を持つか確認"""
         try:
-            return shape.api.TextFrame2.HasText
+            return com_shape.TextFrame2.HasText
         except Exception:
             return False
 
     def has_textframe(self, shape: Shape):
+        return self.has_textframe_com(shape.api)
+
+    def has_textframe_com(self, com_shape):
         """シェイプが TextFrame を持つか確認"""
         try:
-            return hasattr(shape.api, "TextFrame") and shape.api.TextFrame.Characters().Text != ""
+            return hasattr(com_shape, "TextFrame") and com_shape.api.TextFrame.Characters().Text != ""
         except Exception:
             return False
 
+    def _is_group_shape(self, shape: Shape):
+        """シェイプがグループシェイプか確認"""
+        try:
+            # Type = 6 が msoGroup
+            return shape.api.Type == 6
+        except Exception:
+            return False
+
+    def _process_grouped_shapes(self, group_shape: Shape):
+        return self._process_grouped_com_shapes(group_shape.api)
+
+    def _process_grouped_com_shapes(self, com_group_shape):
+        """グループシェイプ内のシェイプを再帰的に処理"""
+        changed_count = 0
+
+        try:
+            # GroupItems で グループ内のシェイプを取得
+            group_items = com_group_shape.GroupItems
+
+            for i in range(1, group_items.Count + 1):
+                try:
+                    com_shape = group_items.Item(i)
+
+                    # 非表示はスキップ
+                    if not com_shape.Visible:
+                        continue
+
+                    # さらにグループシェイプの場合は再帰処理
+                    if com_shape.Type == 6:
+                        changed_count += self._process_grouped_com_shapes(com_shape)
+                    else:
+                        # TextFrame2 を優先的に使用
+                        if self.has_textframe2_com(com_shape):
+                            if self.process_shape_textframe2_com(com_shape):
+                                changed_count += 1
+                        # TextFrame2 がない場合は TextFrame を使用
+                        elif self.has_textframe_com(com_shape):
+                            if self.process_shape_textframe_com(com_shape):
+                                changed_count += 1
+                except Exception as e:
+                    print(f"  ✗ エラー: {e}")
+                    traceback.print_exc()
+
+        except Exception as e:
+            print(f"  ✗ エラー: {e}")
+            traceback.print_exc()
+
+        return changed_count
+
     def process_shape_textframe2(self, shape: Shape):
+        return self.process_shape_textframe2_com(shape.api)
+
+    def process_shape_textframe2_com(self, com_shape):
         """TextFrame2 を使用してシェイプのフォントを処理"""
         try:
-            text_frame = shape.api.TextFrame2.TextRange
+            text_frame = com_shape.TextFrame2.TextRange
             font = text_frame.Font
 
             if font.Name != self.TARGET_FONT:
+                old_name = font.Name
                 old_size = font.Size
+
                 # new_size = math.floor(old_size * self.FONT_SIZE_RATIO)
-                new_size = math.floor(old_size * self.FONT_SIZE_RATIO * 2) / 2  # 0.5刻みで小さい方に丸める
+                if old_size >= 11:
+                    new_size = (
+                        math.floor(old_size * self.FONT_SIZE_RATIO_FOR_GE_11 * 2) / 2
+                    )  # 0.5刻みで小さい方に丸める
+                else:
+                    new_size = (
+                        math.floor(old_size * self.FONT_SIZE_RATIO_FOR_LT_11 * 2) / 2
+                    )  # 0.5刻みで小さい方に丸める
 
                 font.Name = self.TARGET_FONT
                 font.NameFarEast = self.TARGET_FONT
                 font.Size = new_size
+                print(
+                    f"        - フォント: [{com_shape.Name}, {com_shape.ID}] - [{old_name}, {old_size}]"
+                    f" -> {font.Name}, {font.Size} : {repr(text_frame.Text)}"
+                )
 
-                self._adjust_shape_line_spacing(shape)
+                self._adjust_shape_line_spacing_com(com_shape)
                 return True
 
         except Exception:
@@ -333,7 +422,14 @@ class ExcelFontChanger:
             if font.Name != self.TARGET_FONT:
                 old_size = font.Size
                 # new_size = math.floor(old_size * self.FONT_SIZE_RATIO)
-                new_size = math.floor(old_size * self.FONT_SIZE_RATIO * 2) / 2  # 0.5刻みで小さい方に丸める
+                if old_size >= 11:
+                    new_size = (
+                        math.floor(old_size * self.FONT_SIZE_RATIO_FOR_GE_11 * 2) / 2
+                    )  # 0.5刻みで小さい方に丸める
+                else:
+                    new_size = (
+                        math.floor(old_size * self.FONT_SIZE_RATIO_FOR_LT_11 * 2) / 2
+                    )  # 0.5刻みで小さい方に丸める
 
                 font.Name = self.TARGET_FONT
                 font.NameFarEast = self.TARGET_FONT
@@ -347,13 +443,13 @@ class ExcelFontChanger:
 
         return False
 
-    def _adjust_shape_line_spacing(self, shape):
+    def _adjust_shape_line_spacing_com(self, com_shape):
         """シェイプの行間を倍数 0.8 に設定（TextFrame2）"""
         try:
             # see.
             # https://learn.microsoft.com/ja-jp/office/vba/api/office.textrange2.paragraphformat
             # https://learn.microsoft.com/ja-jp/office/vba/api/overview/library-reference/paragraphformat2-members-office
-            para_format = shape.api.TextFrame2.TextRange.ParagraphFormat
+            para_format = com_shape.TextFrame2.TextRange.ParagraphFormat
             # 行間を行数で指定
             para_format.LineRuleWithin = 1  # msoTrue
             para_format.SpaceWithin = self.LINE_SPACE_WITHIN
@@ -365,7 +461,7 @@ class ExcelFontChanger:
 def main():
     """メイン処理"""
     parser = argparse.ArgumentParser(description="Excelファイルのフォントを一括変更します")
-    parser.add_argument("path", help="処理対象のExcelファイルまたはフォルダのパス")
+    parser.add_argument("path", help="処理対象のExcelファイルまたはフォルダのパス", default="./work/excel")
     parser.add_argument(
         "--exclude-sheets",
         nargs="+",
