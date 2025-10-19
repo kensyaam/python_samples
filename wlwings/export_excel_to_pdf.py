@@ -1,8 +1,10 @@
 import sys
+import tempfile
 import time
 from pathlib import Path
 
 import xlwings as xw  # type: ignore
+from PyPDF2 import PdfMerger  # type: ignore
 
 # 通知用（Windows）
 try:
@@ -13,7 +15,7 @@ except ImportError:
     notifier = None
 
 
-def export_excels_to_pdf(input_dir, output_dir=None, recursive=False):
+def export_excels_to_pdf(input_dir, output_dir=None, recursive=False, add_bookmarks: bool = False):
     start_time = time.time()
     input_path = Path(input_dir).resolve()
     if not input_path.is_dir():
@@ -53,9 +55,36 @@ def export_excels_to_pdf(input_dir, output_dir=None, recursive=False):
             print(f"[{i}/{total}] 変換中: {file} → {pdf_path.name}")
 
             try:
-                wb = app.books.open(file)
-                wb.to_pdf(path=pdf_path)
-                wb.close()
+                if add_bookmarks:
+                    with tempfile.TemporaryDirectory() as tmpdir_str:
+                        tmpdir_path = Path(tmpdir_str)
+                        book = xw.Book(file)
+                        merger = PdfMerger()
+
+                        for sheet in book.sheets:
+                            # xlSheetVisible = -1
+                            if sheet.api.Visible != -1:
+                                continue  # 非表示シートはスキップ
+
+                            tmp_pdf = tmpdir_path / f"{sheet.name}.pdf"
+                            # 各シートを一時PDFとして保存
+                            sheet.api.ExportAsFixedFormat(0, str(tmp_pdf))
+                            # PyPDF2で追加＋ブックマーク
+                            merger.append(str(tmp_pdf), outline_item=sheet.name)
+
+                        if merger.pages:
+                            merger.write(pdf_path)
+                        else:
+                            print("  → 変換スキップ（全シート非表示）")
+
+                        merger.close()
+                        book.close()
+
+                else:
+                    wb = app.books.open(file)
+                    wb.to_pdf(path=pdf_path)
+                    wb.close()
+
             except Exception as e:
                 print(f"  ❌ 変換失敗: {file.name} ({e})")
                 failed.append(str(file))
@@ -102,19 +131,20 @@ def export_excels_to_pdf(input_dir, output_dir=None, recursive=False):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print(
-            "使い方: python export_excel_to_pdf.py <入力フォルダ> [出力フォルダ] [--recursive]"
-        )
+        print("使い方: python export_excel_to_pdf.py <入力フォルダ> [出力フォルダ] [--recursive] [-b]")
         sys.exit(1)
 
     input_dir = sys.argv[1]
     output_dir = None
     recursive = False
+    add_bookmarks = False
 
     for arg in sys.argv[2:]:
         if arg == "--recursive":
             recursive = True
+        elif arg == "-b":
+            add_bookmarks = True
         else:
             output_dir = arg
 
-    export_excels_to_pdf(input_dir, output_dir, recursive)
+    export_excels_to_pdf(input_dir, output_dir, recursive, add_bookmarks)
