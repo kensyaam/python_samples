@@ -1,8 +1,0 @@
-# https://code.visualstudio.com/docs/python/python-tutorial
-# https://code.visualstudio.com/docs/python/linting
-#   Pylintは無効化する
-flake8
-mypy
-# https://code.visualstudio.com/docs/python/formatting
-black
-isort

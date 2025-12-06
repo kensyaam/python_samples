@@ -1,3 +1,0 @@
-xlwings
-win10toast
-PyPDF2
