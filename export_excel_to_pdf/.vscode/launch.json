@@ -20,7 +20,6 @@
       "id": "script",
       "description": "Select the Python script to run",
       "options": [
-        "convert_excel_font.py",
         "export_excel_to_pdf.py"
       ]
     },
