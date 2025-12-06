@@ -1,0 +1,33 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "debugpy",
+      "request": "launch",
+      "name": "Run selected Python script",
+      "program": "${workspaceFolder}/${input:script}",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "args": [
+        "${input:targetPath}"
+      ],
+      "justMyCode": true
+    }
+  ],
+  "inputs": [
+    {
+      "type": "pickString",
+      "id": "script",
+      "description": "Select the Python script to run",
+      "options": [
+        "convert_excel_font.py",
+      ]
+    },
+    {
+      "type": "promptString",
+      "id": "targetPath",
+      "description": "Path to Excel file or folder to process (e.g. ./work/excel)",
+      "default": "./work/excel"
+    }
+  ]
+}
