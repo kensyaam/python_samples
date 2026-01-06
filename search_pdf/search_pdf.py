@@ -116,10 +116,11 @@ def search_pdf(
 
         for search_string in search_strings:
             # 検索マッチの判定
+            # 改行は除去して検索
             if ignore_case:
-                match_found = search_string.lower() in text.lower()
+                match_found = search_string.lower() in text.lower().replace("\n", " ").replace("\r", " ")
             else:
-                match_found = search_string in text
+                match_found = search_string in text.replace("\n", " ").replace("\r", " ")
 
             if match_found:
                 context = extract_context(text, search_string, ignore_case)
