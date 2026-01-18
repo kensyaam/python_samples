@@ -35,6 +35,67 @@ def get_bookmarks(doc: fitz.Document) -> list[tuple[int, str]]:
     return bookmarks
 
 
+def list_bookmarks(
+    pdf_path: Path,
+) -> list[dict[str, str]]:
+    """
+    PDFファイルのブックマーク一覧を取得する。
+
+    Args:
+        pdf_path: PDFファイルパス
+
+    Returns:
+        ブックマーク情報のリスト。各要素は以下のキーを持つ辞書:
+        - bookmark: ブックマークタイトル
+    """
+    results: list[dict[str, str]] = []
+    try:
+        doc = fitz.open(pdf_path)
+    except Exception as e:
+        print(f"警告: {pdf_path} を開けませんでした: {e}", file=sys.stderr)
+        return results
+
+    bookmarks = get_bookmarks(doc)
+    for _, title in bookmarks:
+        results.append({"bookmark": title})
+
+    doc.close()
+    return results
+
+
+def write_bookmark_list(
+    results: list[tuple[str, list[dict[str, str]]]],
+    base_path: Path,
+    output: TextIO,
+) -> None:
+    """
+    ブックマーク一覧をCSV形式で出力する。
+
+    Args:
+        results: (ファイルパス, ブックマーク情報リスト) のタプルリスト
+        base_path: 相対パス計算の基準となるパス
+        output: 出力先（ファイルまたはstdout）
+    """
+    fieldnames = ["ファイル名", "ブックマーク"]
+    writer = csv.DictWriter(output, fieldnames=fieldnames, quoting=csv.QUOTE_ALL)
+    writer.writeheader()
+
+    for pdf_path_str, bookmarks in results:
+        pdf_path = Path(pdf_path_str)
+        # 相対パスを計算
+        try:
+            relative_path = pdf_path.relative_to(base_path)
+        except ValueError:
+            relative_path = pdf_path
+
+        for bm in bookmarks:
+            row: dict[str, str] = {
+                "ファイル名": str(relative_path),
+                "ブックマーク": bm["bookmark"],
+            }
+            writer.writerow(row)
+
+
 def find_nearest_bookmark(bookmarks: list[tuple[int, str]], page_num: int) -> str:
     """
     指定ページに最も近い直前のブックマークを返す。
@@ -262,6 +323,12 @@ def main() -> None:
         action="store_true",
         help="詳細出力（ブックマーク、ページ、ヒット箇所）",
     )
+    parser.add_argument(
+        "-l",
+        "--list-bookmarks",
+        action="store_true",
+        help="ブックマーク一覧のみ出力（検索は行わない）",
+    )
     parser.add_argument("-o", "--output", help="出力ファイル（省略時は標準出力）")
     parser.add_argument(
         "-e",
@@ -271,23 +338,26 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    # 検索文字列の取得
+    # ブックマーク一覧モードでない場合のみ検索文字列を必須とする
     search_strings: list[str] = []
-    if args.search_string:
-        search_strings.append(args.search_string)
-    if args.search_file:
-        search_file_path = Path(args.search_file)
-        if not search_file_path.exists():
+    if not args.list_bookmarks:
+        if args.search_string:
+            search_strings.append(args.search_string)
+        if args.search_file:
+            search_file_path = Path(args.search_file)
+            if not search_file_path.exists():
+                print(
+                    f"エラー: 検索文字列ファイル {args.search_file} が見つかりません",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+            search_strings.extend(load_search_strings(search_file_path))
+
+        if not search_strings:
             print(
-                f"エラー: 検索文字列ファイル {args.search_file} が見つかりません",
-                file=sys.stderr,
+                "エラー: -s または -f で検索文字列を指定してください", file=sys.stderr
             )
             sys.exit(1)
-        search_strings.extend(load_search_strings(search_file_path))
-
-    if not search_strings:
-        print("エラー: -s または -f で検索文字列を指定してください", file=sys.stderr)
-        sys.exit(1)
 
     # 対象PDFの収集
     target_path = Path(args.target)
@@ -302,6 +372,39 @@ def main() -> None:
         base_path = target_path
     else:
         base_path = target_path.parent
+
+    # ブックマーク一覧モード
+    if args.list_bookmarks:
+        bookmark_results: list[tuple[str, list[dict[str, str]]]] = []
+        for pdf_file in pdf_files:
+            bookmarks = list_bookmarks(pdf_file)
+            if bookmarks:
+                bookmark_results.append((str(pdf_file), bookmarks))
+
+        # ブックマーク一覧を出力
+        if args.output:
+            output_encoding = args.encoding if args.encoding else "windows-31j"
+            with open(
+                args.output,
+                "w",
+                encoding=output_encoding,
+                errors="replace",
+                newline="",
+            ) as f:
+                write_bookmark_list(bookmark_results, base_path, f)
+            print(
+                f"結果を {args.output} に出力しました（エンコーディング: {output_encoding}）",
+                file=sys.stderr,
+            )
+        else:
+            output_encoding = args.encoding if args.encoding else "utf-8"
+            import io
+
+            sys.stdout = io.TextIOWrapper(
+                sys.stdout.buffer, encoding=output_encoding, newline=""
+            )
+            write_bookmark_list(bookmark_results, base_path, sys.stdout)
+        return
 
     # 検索実行
     all_results: list[tuple[str, list[dict[str, str | int]]]] = []

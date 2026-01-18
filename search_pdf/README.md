@@ -33,6 +33,7 @@ python search_pdf.py <PDFファイル|ディレクトリ> -f <検索文字列リ
 | `-f, --search-file` | 検索文字列リストファイル（改行区切り） |
 | `-i, --ignore-case` | 大文字・小文字を区別しない |
 | `-v, --verbose` | 詳細出力（ブックマーク、ページ、ヒット箇所の文章） |
+| `-l, --list-bookmarks` | ブックマーク一覧のみ出力（検索は行わない） |
 | `-o, --output` | 出力ファイル（省略時は標準出力） |
 | `-e, --encoding` | 出力エンコーディング（-oあり時のデフォルト: windows-31j、標準出力時: utf-8） |
 
@@ -63,6 +64,12 @@ python search_pdf.py document.pdf -s "keyword" -i
 python search_pdf.py ./pdfs -s "検索ワード" -v -o result.csv
 ```
 
+**ブックマーク一覧のみを出力:**
+```bash
+python search_pdf.py document.pdf -l
+python search_pdf.py ./pdfs -l -o bookmarks.csv
+```
+
 ## 出力形式
 
 ### 基本出力（CSV）
@@ -77,6 +84,14 @@ python search_pdf.py ./pdfs -s "検索ワード" -v -o result.csv
 ```csv
 "検索文字列","ファイル名","ブックマーク","ページ","ヒット箇所"
 "検索ワード","subdir/document.pdf","第1章 はじめに","5","この文章には検索ワードが含まれています。"
+```
+
+### ブックマーク一覧出力（-l オプション）
+
+```csv
+"ファイル名","ブックマーク"
+"document.pdf","第1章 はじめに"
+"document.pdf","第2章 概要"
 ```
 
 ## 検索文字列リストファイルの形式
