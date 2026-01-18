@@ -35,9 +35,7 @@ def get_bookmarks(doc: fitz.Document) -> list[tuple[int, str]]:
     return bookmarks
 
 
-def find_nearest_bookmark(
-    bookmarks: list[tuple[int, str]], page_num: int
-) -> str:
+def find_nearest_bookmark(bookmarks: list[tuple[int, str]], page_num: int) -> str:
     """
     指定ページに最も近い直前のブックマークを返す。
 
@@ -118,9 +116,13 @@ def search_pdf(
             # 検索マッチの判定
             # 改行は除去して検索
             if ignore_case:
-                match_found = search_string.lower() in text.lower().replace("\n", " ").replace("\r", " ")
+                match_found = search_string.lower() in text.lower().replace(
+                    "\n", " "
+                ).replace("\r", " ")
             else:
-                match_found = search_string in text.replace("\n", " ").replace("\r", " ")
+                match_found = search_string in text.replace("\n", " ").replace(
+                    "\r", " "
+                )
 
             if match_found:
                 context = extract_context(text, search_string, ignore_case)
@@ -192,7 +194,13 @@ def write_results(
         verbose: 詳細出力フラグ
     """
     if verbose:
-        fieldnames = ["検索文字列", "ファイル名", "ブックマーク", "ページ", "ヒット箇所"]
+        fieldnames = [
+            "検索文字列",
+            "ファイル名",
+            "ブックマーク",
+            "ページ",
+            "ヒット箇所",
+        ]
     else:
         fieldnames = ["検索文字列", "ファイル名"]
 
@@ -238,9 +246,7 @@ def main() -> None:
         description="PDFファイル内を指定文字列で検索し、結果をCSV形式で出力します。"
     )
     parser.add_argument("target", help="検索対象のPDFファイルまたはディレクトリ")
-    parser.add_argument(
-        "-s", "--search-string", help="検索文字列（単一）"
-    )
+    parser.add_argument("-s", "--search-string", help="検索文字列（単一）")
     parser.add_argument(
         "-f", "--search-file", help="検索文字列リストファイル（改行区切り）"
     )
@@ -251,7 +257,10 @@ def main() -> None:
         help="大文字・小文字を区別しない",
     )
     parser.add_argument(
-        "-v", "--verbose", action="store_true", help="詳細出力（ブックマーク、ページ、ヒット箇所）"
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="詳細出力（ブックマーク、ページ、ヒット箇所）",
     )
     parser.add_argument("-o", "--output", help="出力ファイル（省略時は標準出力）")
     parser.add_argument(
@@ -269,7 +278,10 @@ def main() -> None:
     if args.search_file:
         search_file_path = Path(args.search_file)
         if not search_file_path.exists():
-            print(f"エラー: 検索文字列ファイル {args.search_file} が見つかりません", file=sys.stderr)
+            print(
+                f"エラー: 検索文字列ファイル {args.search_file} が見つかりません",
+                file=sys.stderr,
+            )
             sys.exit(1)
         search_strings.extend(load_search_strings(search_file_path))
 
@@ -301,14 +313,20 @@ def main() -> None:
     # 結果出力
     if args.output:
         # -oオプションあり: デフォルトはShift-JIS
-        output_encoding = args.encoding if args.encoding else "shift_jis"
-        with open(args.output, "w", encoding=output_encoding, errors="replace", newline="") as f:
+        output_encoding = args.encoding if args.encoding else "windows-31j"
+        with open(
+            args.output, "w", encoding=output_encoding, errors="replace", newline=""
+        ) as f:
             write_results(all_results, base_path, f, verbose=args.verbose)
-        print(f"結果を {args.output} に出力しました（エンコーディング: {output_encoding}）", file=sys.stderr)
+        print(
+            f"結果を {args.output} に出力しました（エンコーディング: {output_encoding}）",
+            file=sys.stderr,
+        )
     else:
         # 標準出力: デフォルトはUTF-8
         output_encoding = args.encoding if args.encoding else "utf-8"
         import io
+
         # 標準出力のエンコーディングを指定
         sys.stdout = io.TextIOWrapper(
             sys.stdout.buffer, encoding=output_encoding, newline=""
