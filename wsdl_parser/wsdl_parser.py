@@ -248,6 +248,17 @@ class WSDLParser:
 
         return messages
 
+    def _get_documentation(self, element: etree._Element) -> str:
+        """annotation/documentation要素からドキュメント文字列を取得"""
+        doc_result = element.xpath(
+            "./xsd:annotation/xsd:documentation", namespaces=self.NAMESPACES
+        )
+        if isinstance(doc_result, list) and len(doc_result) > 0:
+            doc_elem = doc_result[0]
+            if isinstance(doc_elem, etree._Element) and doc_elem.text:
+                return doc_elem.text.strip()
+        return ""
+
     def parse_types(self) -> List[Dict[str, Any]]:
         """データ型定義を解析"""
         types_list = []
@@ -258,7 +269,12 @@ class WSDLParser:
                 ".//xsd:complexType[@name]", namespaces=self.NAMESPACES
             ):
                 type_name = complex_type.get("name")
-                type_info = {"name": type_name, "type": "complexType", "elements": []}
+                type_info = {
+                    "name": type_name,
+                    "type": "complexType",
+                    "documentation": self._get_documentation(complex_type),
+                    "elements": [],
+                }
 
                 for element in complex_type.xpath(
                     ".//xsd:element", namespaces=self.NAMESPACES
@@ -269,6 +285,7 @@ class WSDLParser:
                         "minOccurs": element.get("minOccurs", "1"),
                         "maxOccurs": element.get("maxOccurs", "1"),
                         "nillable": element.get("nillable", "false"),
+                        "documentation": self._get_documentation(element),
                     }
                     type_info["elements"].append(elem_info)
 
@@ -280,15 +297,21 @@ class WSDLParser:
                 if not elem_name:
                     continue
 
+                # 要素のドキュメントを取得
+                elem_doc = self._get_documentation(element)
+
                 # 要素内に無名のcomplexTypeがあるかチェック
                 inner_complex = element.xpath(
                     "./xsd:complexType", namespaces=self.NAMESPACES
                 )
                 if inner_complex:
                     # 無名complexTypeを要素名でcomplexTypeとして登録
+                    # 無名complexType自体のドキュメントも確認
+                    inner_doc = self._get_documentation(inner_complex[0])
                     type_info = {
                         "name": elem_name,
                         "type": "complexType",
+                        "documentation": elem_doc or inner_doc,
                         "elements": [],
                     }
                     for inner_elem in inner_complex[0].xpath(
@@ -300,6 +323,7 @@ class WSDLParser:
                             "minOccurs": inner_elem.get("minOccurs", "1"),
                             "maxOccurs": inner_elem.get("maxOccurs", "1"),
                             "nillable": inner_elem.get("nillable", "false"),
+                            "documentation": self._get_documentation(inner_elem),
                         }
                         type_info["elements"].append(inner_elem_info)
                     types_list.append(type_info)
@@ -309,6 +333,7 @@ class WSDLParser:
                         "name": elem_name,
                         "type": "element",
                         "dataType": self._strip_namespace(element.get("type", "")),
+                        "documentation": elem_doc,
                     }
                     types_list.append(elem_info)
 
@@ -397,14 +422,29 @@ def format_text_output(data: Dict[str, Any]) -> str:
         for dtype in data["types"]:
             if dtype["type"] == "complexType":
                 output.append(f"\n【複合型】 {dtype['name']}")
+                # 型自体のドキュメント
+                if dtype.get("documentation"):
+                    output.append(f"    説明: {dtype['documentation']}")
                 for elem in dtype["elements"]:
                     occurs = f"[{elem['minOccurs']}..{elem['maxOccurs']}]"
                     nillable = " (nullable)" if elem["nillable"] == "true" else ""
+                    doc_text = (
+                        f" - {elem['documentation']}"
+                        if elem.get("documentation")
+                        else ""
+                    )
                     output.append(
-                        f"  ├─ {elem['name']}: {elem['type']} {occurs}{nillable}"
+                        f"  ├─ {elem['name']}: {elem['type']} {occurs}{nillable}{doc_text}"
                     )
             else:
-                output.append(f"\n【要素】 {dtype['name']} : {dtype['dataType']}")
+                doc_text = (
+                    f"\n    説明: {dtype['documentation']}"
+                    if dtype.get("documentation")
+                    else ""
+                )
+                output.append(
+                    f"\n【要素】 {dtype['name']} : {dtype['dataType']}{doc_text}"
+                )
 
     output.append("\n" + "=" * 80)
     return "\n".join(output)
@@ -672,14 +712,19 @@ def generate_html_output(data: Dict[str, Any]) -> str:
         for dtype in data["types"]:
             if dtype["type"] == "complexType":
                 anchor_id = _make_anchor_id("type", dtype["name"])
-                html += f'<div class="type" id="{anchor_id}"><h4>{dtype["name"]}</h4><table>'
-                html += "<tr><th>フィールド名</th><th>型</th><th>出現回数</th><th>Nullable</th></tr>"
+                html += f'<div class="type" id="{anchor_id}"><h4>{dtype["name"]}</h4>'
+                # 型自体のドキュメント
+                if dtype.get("documentation"):
+                    html += f'<p><i>{dtype["documentation"]}</i></p>'
+                html += "<table>"
+                html += "<tr><th>フィールド名</th><th>型</th><th>出現回数</th><th>Nullable</th><th>説明</th></tr>"
                 for elem in dtype["elements"]:
                     occurs = f"{elem['minOccurs']}..{elem['maxOccurs']}"
                     nillable = "✓" if elem["nillable"] == "true" else ""
+                    doc = elem.get("documentation", "")
                     # フィールドの型にもリンクを付ける（他のcomplexTypeを参照している場合）
                     type_link = _make_link_if_exists(elem["type"], type_names, "type")
-                    html += f'<tr><td>{elem["name"]}</td><td>{type_link}</td><td>{occurs}</td><td>{nillable}</td></tr>'
+                    html += f'<tr><td>{elem["name"]}</td><td>{type_link}</td><td>{occurs}</td><td>{nillable}</td><td>{doc}</td></tr>'
                 html += "</table></div>"
             else:
                 # element型の場合
@@ -687,6 +732,9 @@ def generate_html_output(data: Dict[str, Any]) -> str:
                 data_type = dtype.get("dataType", "")
                 type_link = _make_link_if_exists(data_type, type_names, "type")
                 html += f'<div class="type" id="{anchor_id}"><h4>{dtype["name"]}</h4>'
+                # 要素のドキュメント
+                if dtype.get("documentation"):
+                    html += f'<p><i>{dtype["documentation"]}</i></p>'
                 html += f'<p><span class="label">データ型:</span> {type_link}</p></div>'
     html += "</div>"
 

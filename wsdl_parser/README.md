@@ -9,7 +9,7 @@ WSDLファイルまたはURLからWSDL定義を取得し、以下の情報を整
 - **サービス情報**: サービス名、ポート、エンドポイントURL
 - **オペレーション一覧**: メソッド名、入出力メッセージ、SOAPAction
 - **メッセージ定義**: パラメータ名と要素/型の参照
-- **データ型定義**: ComplexType、Element、フィールド情報
+- **データ型定義**: ComplexType、Element、フィールド情報、xsd:annotation/xsd:documentationからの説明文
 
 ## 特徴
 
