@@ -286,8 +286,8 @@ class JspAnalyzer:
         # 改行、および、タブ、連続する空白を1つの空白に置換
         code = re.sub(r"[\n\t ]+", " ", tag.get_text()).strip()
         # 長いコードは省略表示
-        if len(code) > 50:
-            code = code[:47] + "..."
+        if len(code) > 200:
+            code = code[:197] + "..."
         lines.append(f"{indent}[{ICON_JAVA}Java {type_name.capitalize()}]: {code}")
 
     def _build_tag_parts(self, tag: Tag, tag_name: str) -> List[str]:
@@ -431,10 +431,8 @@ class JspAnalyzer:
             if name and name not in func_names:
                 func_names.append(name)
 
-        if func_names:
-            lines.append(
-                f"{indent}{ICON_FUNC} [Functions]: " f"{', '.join(func_names)}"
-            )
+        for func_name in func_names:
+            lines.append(f"{indent}{ICON_FUNC} [Function]: {func_name}")
 
         # イベントハンドラ設定の抽出
         event_handlers: List[str] = []
@@ -450,11 +448,8 @@ class JspAnalyzer:
             if handler not in event_handlers:
                 event_handlers.append(handler)
 
-        if event_handlers:
-            lines.append(
-                f"{indent}{ICON_EVENT} [Event Bindings]: "
-                f"{', '.join(event_handlers)}"
-            )
+        for handler in event_handlers:
+            lines.append(f"{indent}{ICON_EVENT} [Event Binding]: {handler}")
 
     def _process_text(
         self, node: NavigableString, lines: List[str], indent: str
@@ -480,8 +475,8 @@ class JspAnalyzer:
             clean_text = self.re_el.sub("", text).strip()
             if clean_text:
                 # 長いテキストは省略表示
-                if len(clean_text) > 40:
-                    clean_text = clean_text[:37] + "..."
+                if len(clean_text) > 200:
+                    clean_text = clean_text[:197] + "..."
                 lines.append(f"{indent}{ICON_TEXT} {clean_text}")
 
 
