@@ -160,6 +160,22 @@ class JspAnalyzer:
         "name": "name",
     }
 
+    # JSTLタグ名の復元マッピング: 小文字タグ名 → 元のキャメルケース表記
+    # Note: BeautifulSoupのhtml.parserがタグ名を小文字化するため、
+    #       出力時に元のケースに復元する
+    JSTL_TAG_NAMES: Dict[str, str] = {
+        "c:foreach": "c:forEach",
+        "c:setwhen": "c:setWhen",
+        "fmt:formatdate": "fmt:formatDate",
+        "fmt:formatnumber": "fmt:formatNumber",
+        "fmt:parsedate": "fmt:parseDate",
+        "fmt:parsenumber": "fmt:parseNumber",
+        "fmt:requestencoding": "fmt:requestEncoding",
+        "fmt:setbundle": "fmt:setBundle",
+        "fmt:setlocale": "fmt:setLocale",
+        "fmt:settimezone": "fmt:setTimeZone",
+    }
+
     def __init__(self, encoding: str = "utf-8", no_text: bool = False) -> None:
         """JspAnalyzerの初期化。
 
@@ -184,14 +200,16 @@ class JspAnalyzer:
             r")"
         )
         # script内のイベントハンドラ設定検出用の正規表現
-        # window.onload, document.onXxx,
-        # addEventListener('event', ...), .on('event', ...)
+        # window.onload = handler, document.onXxx = handler,
+        # target.addEventListener('event', handler)
+        # グループ: (1)=full prop, (2)=event名, (3)=ハンドラ名,
+        #           (4)=target, (5)=event名, (6)=ハンドラ名
         self.re_js_event = re.compile(
             r"(?:"
-            r"((?:window|document)\.(on\w+))\s*="
+            r"((?:window|document)\.(on\w+))\s*=\s*([\w$]+)"
             r"|"
             r"(\w+(?:[.(][^)]*\))*(?:\.\w+)*)\."
-            r"addEventListener\s*\(\s*['\"]([\w]+)['\"]"
+            r"addEventListener\s*\(\s*['\"]([\w]+)['\"]\s*,\s*([\w$]+)"
             r")"
         )
 
@@ -314,7 +332,9 @@ class JspAnalyzer:
                     parts.append(f"{icon}{display_name}='{tag[lower_key]}'")
 
         elif is_jstl:
-            parts.append(f"<{ICON_JSTL}{tag_name}>")
+            # 小文字化されたタグ名を元のキャメルケースに復元
+            display_tag_name = self.JSTL_TAG_NAMES.get(tag_name, tag_name)
+            parts.append(f"<{ICON_JSTL}{display_tag_name}>")
             for lower_key, display_name in self.JSTL_ATTRS.items():
                 if tag.has_attr(lower_key):
                     icon = self._get_jstl_attr_icon(lower_key)
@@ -438,15 +458,23 @@ class JspAnalyzer:
         event_handlers: List[str] = []
         for match in self.re_js_event.finditer(script_text):
             if match.group(1):
-                # window.onload = ... 形式
-                handler = match.group(1)
+                # window.onload = handler 形式
+                binding = match.group(1)
+                handler_name = match.group(3)
             else:
-                # addEventListener('event', ...) 形式
-                target = match.group(3)
-                event = match.group(4)
-                handler = f"{target}.on('{event}')"
-            if handler not in event_handlers:
-                event_handlers.append(handler)
+                # target.addEventListener('event', handler) 形式
+                target = match.group(4)
+                event = match.group(5)
+                binding = f"{target}.on('{event}')"
+                handler_name = match.group(6)
+
+            # function/匿名関数の場合は (anonymous) と表示
+            if handler_name == "function":
+                handler_name = "(anonymous)"
+
+            entry = f"{binding} → {handler_name}"
+            if entry not in event_handlers:
+                event_handlers.append(entry)
 
         for handler in event_handlers:
             lines.append(f"{indent}{ICON_EVENT} [Event Binding]: {handler}")
