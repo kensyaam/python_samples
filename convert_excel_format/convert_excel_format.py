@@ -572,6 +572,8 @@ def main():
     # 完全に裏で動かしたい場合は visible=False に変更してください。
     app = xw.App(visible=False, add_book=False)
 
+    error_files = []
+
     try:
         # コピー元のテンプレートファイルを開く
         wb_template = app.books.open(TEMPLATE_FILE)
@@ -712,6 +714,7 @@ def main():
 
             except Exception as e:
                 print(f"エラーが発生しました: {e}")
+                error_files.append(file_path.name)
             finally:
                 # エラーが起きても対象ファイルは必ず保存して閉じる
                 wb.save()
@@ -723,6 +726,13 @@ def main():
             wb_template.close()
         app.quit()
         print("すべての処理が完了しました。")
+
+        if error_files:
+            print("\n" + "=" * 60)
+            print("【エラーが発生したファイル一覧】")
+            for ef in error_files:
+                print(f"  - {ef}")
+            print("=" * 60)
 
 
 if __name__ == "__main__":
