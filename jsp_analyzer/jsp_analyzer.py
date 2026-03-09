@@ -26,7 +26,7 @@ logger = logging.getLogger(__name__)
 ICON_INCLUDE = "🔗"
 ICON_SPRING = "🌱"
 ICON_JSTL = "💠"
-ICON_DATA = "🔌"
+ICON_DATA = "🧩"
 ICON_JAVA = "☕"
 ICON_EVENT = "⚡"
 ICON_TEXT = "📝"
@@ -540,8 +540,13 @@ class JspAnalyzer:
             parts.append(f"<{ICON_SPRING}{tag_name}>")
             for lower_key, display_name in self.SPRING_ATTRS.items():
                 if tag.has_attr(lower_key):
+                    val = tag[lower_key]
+                    str_val = " ".join(val) if isinstance(val, list) else str(val)
+                    warn_mark, formatted_val = self._process_el_in_attr(
+                        tag, tag_name, str_val
+                    )
                     icon = self._get_spring_attr_icon(lower_key)
-                    parts.append(f"{icon}{display_name}='{tag[lower_key]}'")
+                    parts.append(f"{warn_mark}{icon}{display_name}='{formatted_val}'")
 
         elif is_jstl:
             # 小文字化されたタグ名を元のキャメルケースに復元
@@ -549,8 +554,13 @@ class JspAnalyzer:
             parts.append(f"<{ICON_JSTL}{display_tag_name}>")
             for lower_key, display_name in self.JSTL_ATTRS.items():
                 if tag.has_attr(lower_key):
+                    val = tag[lower_key]
+                    str_val = " ".join(val) if isinstance(val, list) else str(val)
+                    warn_mark, formatted_val = self._process_el_in_attr(
+                        tag, tag_name, str_val
+                    )
                     icon = self._get_jstl_attr_icon(lower_key)
-                    parts.append(f"{icon}{display_name}='{tag[lower_key]}'")
+                    parts.append(f"{warn_mark}{icon}{display_name}='{formatted_val}'")
 
         elif is_jsp_include:
             page = tag.get("page", "")
@@ -617,6 +627,24 @@ class JspAnalyzer:
             return match.group(0)
         return full_tag
 
+    def _process_el_in_attr(
+        self, tag: Tag, tag_name: str, str_value: str
+    ) -> tuple[str, str]:
+        """属性値のEL式をチェックし、(警告マーク, アイコンを付与した値) を返す。"""
+        if "${" not in str_value:
+            return "", str_value
+
+        rule = self._check_warning(
+            target="el_expression",
+            value=str_value,
+            line_number=getattr(tag, "sourceline", 0) or 0,
+            raw_snippet=self._get_tag_snippet(tag, tag_name),
+        )
+        warn_mark = self._format_warning(rule)
+
+        # EL式のアイコンを値の先頭に付与
+        return warn_mark, f"{ICON_DATA}{str_value}"
+
     def _extract_attr_info(self, tag: Tag, parts: List[str], tag_name: str) -> None:
         """タグの属性からイベントハンドラ・EL式・href等を抽出する。
 
@@ -653,24 +681,23 @@ class JspAnalyzer:
                 parts.append(f"{warn_mark}{ICON_EVENT}{attr}='{str_value}'")
             # 属性内のEL式
             elif "${" in str_value:
-                rule = self._check_warning(
-                    target="el_expression",
-                    value=str_value,
-                    line_number=getattr(tag, "sourceline", 0) or 0,
-                    raw_snippet=self._get_tag_snippet(tag, tag_name),
+                warn_mark, formatted_val = self._process_el_in_attr(
+                    tag, tag_name, str_value
                 )
-                warn_mark = self._format_warning(rule)
-                parts.append(f"{warn_mark}{ICON_DATA} [Attr EL]: {attr}='{str_value}'")
+                parts.append(f"{warn_mark}{attr}='{formatted_val}'")
             # href属性（aタグ）
             elif attr == "href" and tag_name == "a":
                 parts.append(f"href='{str_value}'")
-            # 標準HTMLタグのtype/value属性
-            elif attr in ("type", "value") and not (
+            # 標準HTMLタグのtype/value/name属性
+            elif attr in ("type", "value", "name") and not (
                 tag_name.startswith("form:")
                 or tag_name.startswith("c:")
                 or tag_name.startswith("fmt:")
             ):
-                parts.append(f"{attr}='{str_value}'")
+                if attr == "name":
+                    parts.append(f"{ICON_PATH}{attr}='{str_value}'")
+                else:
+                    parts.append(f"{attr}='{str_value}'")
 
     def _extract_script_info(self, tag: Tag, lines: List[str], indent: str) -> None:
         """scriptタグ内のJavaScriptから関数定義・イベントハンドラ設定を抽出する。
@@ -776,7 +803,8 @@ class JspAnalyzer:
                 raw_snippet=raw_snippet,
             )
             warn_mark = self._format_warning(rule)
-            lines.append(f"{indent}{warn_mark}{ICON_DATA} [Data]: {el_text}")
+            # lines.append(f"{indent}{warn_mark}{ICON_DATA} [Data]: {el_text}")
+            lines.append(f"{indent}{warn_mark}{ICON_DATA} {el_text}")
 
         # 静的テキスト（--no-text オプション時は非表示）
         if not self.no_text:
