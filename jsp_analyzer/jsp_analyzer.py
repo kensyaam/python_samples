@@ -76,7 +76,7 @@ class WarningEntry(TypedDict):
 DEFAULT_MIGRATION_RULES: List[MigrationRule] = [
     {
         "id": "scriptlet",
-        "name": "スクリプトレット",
+        "name": "スクリプトレット(<% %>)",
         "complexity": "高",
         "target": "jsp-logic",
         "type": "scriptlet",
@@ -84,11 +84,19 @@ DEFAULT_MIGRATION_RULES: List[MigrationRule] = [
     },
     {
         "id": "jsp_declaration",
-        "name": "JSP宣言",
+        "name": "JSP宣言(<%! %>)",
         "complexity": "高",
         "target": "jsp-logic",
         "type": "declaration",
         "description": "バックエンドAPI等への移行が必要",
+    },
+    {
+        "id": "jsp_expression",
+        "name": "JSP式(<%= %>)",
+        "complexity": "中",
+        "target": "jsp-logic",
+        "type": "expression",
+        "description": "直接的な出力。JSフレームワークのデータバインディング記法へ移行が必要",
     },
     {
         "id": "js_event_bind",
@@ -126,6 +134,22 @@ DEFAULT_MIGRATION_RULES: List[MigrationRule] = [
         "target": "html_tag",
         "pattern": r"^(font|center|marquee|blink|strike|u)$",
         "description": "CSSでのスタイリングへ移行が必要",
+    },
+    {
+        "id": "boolean_attr",
+        "name": "Boolean属性",
+        "complexity": "低",
+        "target": "html_attr_name",
+        "pattern": r"^(checked|disabled|readonly|selected|multiple)$",
+        "description": "React/Vueでは動的バインディング(props)への書き換えが必要",
+    },
+    {
+        "id": "javascript_pseudo_url",
+        "name": "JavaScript疑似URL",
+        "complexity": "低",
+        "target": "html_attr_value",
+        "pattern": r"javascript:",
+        "description": "イベントハンドラまたはRouter遷移への書き換えが必要",
     },
 ]
 
@@ -463,6 +487,29 @@ class JspAnalyzer:
         )
         tag_warn_mark = self._format_warning(rule) if rule else ""
 
+        # --- HTMLタグの属性名・属性値の検出 ---
+        for attr, value in tag.attrs.items():
+            str_value = " ".join(value) if isinstance(value, list) else str(value)
+            # 属性名のチェック
+            attr_rule = self._check_warning(
+                target="html_attr_name",
+                value=attr,
+                line_number=getattr(tag, "sourceline", 0) or 0,
+                raw_snippet=self._get_tag_snippet(tag, tag_name),
+            )
+            if attr_rule:
+                tag_warn_mark += self._format_warning(attr_rule)
+
+            # 属性値のチェック
+            val_rule = self._check_warning(
+                target="html_attr_value",
+                value=str_value,
+                line_number=getattr(tag, "sourceline", 0) or 0,
+                raw_snippet=self._get_tag_snippet(tag, tag_name),
+            )
+            if val_rule:
+                tag_warn_mark += self._format_warning(val_rule)
+
         # --- タグ情報の組み立て ---
         parts: List[str] = self._build_tag_parts(tag, tag_name)
 
@@ -617,8 +664,30 @@ class JspAnalyzer:
 
         a, input, form:inputタグの場合は終了タグまで含めた全体を返し、
         それ以外の場合は開始タグのみを返す。
+
+        Note:
+            BeautifulSoupのhtml.parserはBoolean属性（checked, disabled等）を
+            checked="" のように空文字列の値付きで保持するため、
+            元のHTMLに近い形式に復元する後処理を行う。
         """
         full_tag = str(tag)
+
+        # HTML仕様で定義されたBoolean属性のセット
+        # Note: value="" のような意図的な空文字列まで除去しないよう、
+        #       Boolean属性として定義されたもののみに限定する
+        html_boolean_attrs = {
+            "allowfullscreen", "async", "autofocus", "autoplay",
+            "checked", "controls", "default", "defer", "disabled",
+            "formnovalidate", "hidden", "ismap", "loop", "multiple",
+            "muted", "nomodule", "novalidate", "open", "playsinline",
+            "readonly", "required", "reversed", "selected",
+        }
+
+        # Boolean属性の復元: checked="" → checked
+        for attr_name, attr_val in tag.attrs.items():
+            if attr_val == "" and attr_name in html_boolean_attrs:
+                full_tag = full_tag.replace(f'{attr_name}=""', attr_name)
+
         if tag_name in ("a", "input", "form:input"):
             return full_tag
 
