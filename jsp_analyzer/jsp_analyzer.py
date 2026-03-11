@@ -61,7 +61,7 @@ class MigrationRule(TypedDict, total=False):
     description: str
 
 
-class WarningEntry(TypedDict):
+class WarningEntry(TypedDict, total=False):
     file_path: str
     line_number: int
     rule_id: str
@@ -69,6 +69,7 @@ class WarningEntry(TypedDict):
     complexity: str
     snippet: str
     raw_snippet: str
+    line_count: int  # スクリプトレット等の行数（任意）
 
 
 # --- 移行支援用の警告ルール（デフォルト） ---
@@ -359,6 +360,7 @@ class JspAnalyzer:
         type_val: str = "",
         line_number: int = 0,
         raw_snippet: str = "",
+        line_count: int = 0,
     ) -> Optional[MigrationRule]:
         """警告対象かルールベースでチェックする。"""
         for rule in self.migration_rules:
@@ -387,17 +389,18 @@ class JspAnalyzer:
                     snippet = snippet[:97] + "..."
                 # 改行除去
                 snippet = snippet.replace("\n", " ").replace("\r", "")
-                self.warning_entries.append(
-                    {
-                        "file_path": self.current_file_path,  # type: ignore
-                        "line_number": line_number,
-                        "rule_id": rule_id,
-                        "rule_name": rule.get("name", ""),
-                        "complexity": rule.get("complexity", "不明"),
-                        "snippet": snippet,
-                        "raw_snippet": raw_snippet.strip(),
-                    }
-                )
+                entry: WarningEntry = {
+                    "file_path": self.current_file_path,  # type: ignore
+                    "line_number": line_number,
+                    "rule_id": rule_id,
+                    "rule_name": rule.get("name", ""),
+                    "complexity": rule.get("complexity", "不明"),
+                    "snippet": snippet,
+                    "raw_snippet": raw_snippet.strip(),
+                }
+                if line_count > 0:
+                    entry["line_count"] = line_count
+                self.warning_entries.append(entry)
 
             return rule
         return None
@@ -550,11 +553,15 @@ class JspAnalyzer:
         else:
             raw_snippet = f"<%{code_inner}%>"
 
+        # スクリプトレットの行数を計算（<% ～ %> 内の改行数 + 1）
+        script_line_count = code_inner.count("\n") + 1
+
         rule = self._check_warning(
             target="jsp-logic",
             type_val=type_name,
             line_number=getattr(tag, "sourceline", 0) or 0,
             raw_snippet=raw_snippet,
+            line_count=script_line_count,
         )
         warn_mark = self._format_warning(rule)
 
@@ -938,6 +945,7 @@ class JspAnalyzer:
                 [
                     "対象ファイル",
                     "行番号",
+                    "行数",
                     "難易度",
                     "種類",
                     "該当コード/属性値（スニペット）",
@@ -961,6 +969,7 @@ class JspAnalyzer:
                     [
                         entry["file_path"],
                         entry.get("line_number", ""),
+                        entry.get("line_count", ""),
                         entry["complexity"],
                         entry["rule_name"],
                         entry["snippet"],
